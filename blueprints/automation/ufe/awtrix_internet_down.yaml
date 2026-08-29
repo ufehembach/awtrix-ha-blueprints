@@ -1,0 +1,90 @@
+blueprint:
+  name: AWTRIX Internet-Down-Popup
+  description: >-
+    Zeigt ein rotes "Offline!"-Popup mit kurzem Warnton, sobald der
+    Ping/Connectivity-Sensor laenger als die angegebene Zeit "off" ist.
+  domain: automation
+  input:
+    ping_sensor:
+      name: Ping/Connectivity Sensor
+      description: Binary Sensor, "on" = Internet erreichbar
+      selector:
+        entity:
+          domain: binary_sensor
+    awtrix_topic_prefix:
+      name: AWTRIX MQTT Topic-Prefix
+      default: awtrix_d01974
+      selector:
+        text:
+    offline_seconds:
+      name: Wartezeit bis "Offline" gemeldet wird (Sekunden)
+      default: 30
+      selector:
+        number:
+          min: 0
+          max: 300
+          mode: box
+    notify_text:
+      name: Popup-Text
+      default: "Offline!"
+      selector:
+        text:
+    notify_icon:
+      name: LaMetric-Icon-ID
+      default: "75254"
+      selector:
+        text:
+    notify_color:
+      name: Textfarbe (Hex)
+      default: "#FF0000"
+      selector:
+        text:
+    notify_duration:
+      name: Anzeigedauer (Sekunden)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 60
+          mode: box
+    notify_rtttl:
+      name: RTTTL-Warnton
+      description: Leer lassen fuer keinen Ton
+      default: "alarm:d=16,o=5,b=200:c"
+      selector:
+        text:
+
+trigger:
+  - trigger: state
+    entity_id: !input ping_sensor
+    to: "off"
+    for:
+      hours: 0
+      minutes: 0
+      seconds: !input offline_seconds
+
+condition: []
+
+action:
+  - variables:
+      awtrix_prefix: !input awtrix_topic_prefix
+      notify_text: !input notify_text
+      notify_icon: !input notify_icon
+      notify_color: !input notify_color
+      notify_duration: !input notify_duration
+      notify_rtttl: !input notify_rtttl
+  - action: mqtt.publish
+    data:
+      topic: "{{ awtrix_prefix }}/notify"
+      payload: >-
+        {
+          "text": "{{ notify_text }}",
+          "icon": "{{ notify_icon }}",
+          "color": "{{ notify_color }}",
+          "duration": {{ notify_duration }},
+          "hold": false
+          {%- if notify_rtttl and notify_rtttl != '' -%}
+          ,"rtttl": "{{ notify_rtttl }}"
+          {%- endif -%}
+        }
+mode: single

@@ -1,0 +1,139 @@
+blueprint:
+  name: AWTRIX Internet-Speed-Popup
+  description: >-
+    Zeigt Download/Upload (Speedtest) als Popup auf AWTRIX3. Faellt bei
+    0/unavailable auf den letzten guten Wert zurueck und stoesst nach einem
+    Reconnect automatisch einen frischen Speedtest an.
+  domain: automation
+  input:
+    speedtest_download:
+      name: Speedtest Download Sensor
+      selector:
+        entity:
+          domain: sensor
+    speedtest_upload:
+      name: Speedtest Upload Sensor
+      selector:
+        entity:
+          domain: sensor
+    ping_sensor:
+      name: Ping/Connectivity Sensor
+      description: Binary Sensor, "on" = Internet erreichbar
+      selector:
+        entity:
+          domain: binary_sensor
+    button_sensor:
+      name: AWTRIX Button (mittlere Taste)
+      selector:
+        entity:
+          domain: binary_sensor
+    awtrix_topic_prefix:
+      name: AWTRIX MQTT Topic-Prefix
+      default: awtrix_d01974
+      selector:
+        text:
+    max_down_helper:
+      name: Helper – letzter guter Max-Down-Wert
+      description: Gleicher Helper wie im Netzwerk-Verlauf-Blueprint
+      selector:
+        entity:
+          domain: input_text
+    max_up_helper:
+      name: Helper – letzter guter Max-Up-Wert
+      description: Gleicher Helper wie im Netzwerk-Verlauf-Blueprint
+      selector:
+        entity:
+          domain: input_text
+    reconnect_seconds:
+      name: Wartezeit nach Reconnect (Sekunden)
+      default: 30
+      selector:
+        number:
+          min: 0
+          max: 300
+          mode: box
+
+trigger:
+  - trigger: state
+    entity_id:
+      - !input speedtest_download
+      - !input speedtest_upload
+  - id: reconnect
+    trigger: state
+    entity_id: !input ping_sensor
+    from:
+      - "off"
+    to:
+      - "on"
+    for:
+      hours: 0
+      minutes: 0
+      seconds: !input reconnect_seconds
+  - trigger: state
+    entity_id: !input button_sensor
+    to: "on"
+
+condition: []
+
+action:
+  - variables:
+      speedtest_download: !input speedtest_download
+      speedtest_upload: !input speedtest_upload
+      awtrix_prefix: !input awtrix_topic_prefix
+      max_down_helper: !input max_down_helper
+      max_up_helper: !input max_up_helper
+  - if:
+      - condition: trigger
+        id: reconnect
+    then:
+      - action: homeassistant.update_entity
+        data:
+          entity_id:
+            - "{{ speedtest_download }}"
+            - "{{ speedtest_upload }}"
+  - variables:
+      down_raw: "{{ states(speedtest_download) }}"
+      up_raw: "{{ states(speedtest_upload) }}"
+      down_valid: "{{ down_raw not in ['unknown','unavailable',none,''] and (down_raw | float(0)) > 0 }}"
+      up_valid: "{{ up_raw not in ['unknown','unavailable',none,''] and (up_raw | float(0)) > 0 }}"
+      down_mbit: "{{ (down_raw | float(0)) if down_valid else (states(max_down_helper) | float(0)) }}"
+      up_mbit: "{{ (up_raw | float(0)) if up_valid else (states(max_up_helper) | float(0)) }}"
+      down_bits: "{{ down_mbit * 1000000 }}"
+      up_bits: "{{ up_mbit * 1000000 }}"
+      max_bits: "{{ [down_bits, up_bits] | max }}"
+      divisor: >-
+        {%- if max_bits >= 100000000 -%}1000000000 {%- elif max_bits >= 100000
+        -%}1000000 {%- elif max_bits >= 100 -%}1000 {%- else -%}1 {%- endif -%}
+      unit: >-
+        {%- if max_bits >= 100000000 -%}G {%- elif max_bits >= 100000 -%}M {%-
+        elif max_bits >= 100 -%}K {%- else -%}B {%- endif -%}
+      display_text: >-
+        {{ (down_bits / divisor | float) | round(0) }}/{{ (up_bits / divisor |
+        float) | round(0) }}{{ unit }}
+  - action: input_text.set_value
+    data:
+      entity_id: "{{ max_down_helper }}"
+      value: "{{ down_mbit }}"
+  - action: input_text.set_value
+    data:
+      entity_id: "{{ max_up_helper }}"
+      value: "{{ up_mbit }}"
+  - repeat:
+      count: 10
+      sequence:
+        - action: mqtt.publish
+          data:
+            topic: "{{ awtrix_prefix }}/notify"
+            payload: |-
+              {
+                "text": "{{ display_text }}",
+                "color": "#00FF00",
+                "progress": {{ 100 - (repeat.index - 1) * 10 }},
+                "progressC": "#00FF00",
+                "duration": {{ 22 - (repeat.index - 1) * 2 }},
+                "hold": false,
+                "stack": false
+              }
+        - delay:
+            seconds: 2
+mode: single

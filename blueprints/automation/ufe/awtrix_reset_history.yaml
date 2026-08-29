@@ -1,0 +1,55 @@
+blueprint:
+  name: AWTRIX Netzwerk-Verlauf zuruecksetzen
+  description: >-
+    Setzt Download-/Upload-Verlauf und Append-Timer zurueck. Kein Trigger –
+    manuell ueber den "Ausfuehren"-Button in der Automations-Liste starten.
+  domain: automation
+  input:
+    download_history_helper:
+      name: Helper – Download-Verlauf
+      description: Gleicher Helper wie im Netzwerk-Verlauf-Blueprint
+      selector:
+        entity:
+          domain: input_text
+    upload_history_helper:
+      name: Helper – Upload-Verlauf
+      description: Gleicher Helper wie im Netzwerk-Verlauf-Blueprint
+      selector:
+        entity:
+          domain: input_text
+    last_append_helper:
+      name: Helper – Zeitstempel letzter Append
+      description: Gleicher Helper wie im Netzwerk-Verlauf-Blueprint
+      selector:
+        entity:
+          domain: input_text
+    history_length:
+      name: Anzahl Spalten im Verlauf
+      description: Muss zum Netzwerk-Verlauf-Blueprint passen
+      default: 30
+      selector:
+        number:
+          min: 5
+          max: 60
+          mode: box
+
+trigger: []
+condition: []
+action:
+  - variables:
+      history_length: !input history_length
+  - variables:
+      zeros: "{{ [0] * (history_length | int) }}"
+  - action: input_text.set_value
+    data:
+      entity_id: !input download_history_helper
+      value: "{{ zeros | tojson }}"
+  - action: input_text.set_value
+    data:
+      entity_id: !input upload_history_helper
+      value: "{{ zeros | tojson }}"
+  - action: input_text.set_value
+    data:
+      entity_id: !input last_append_helper
+      value: ""
+mode: single
