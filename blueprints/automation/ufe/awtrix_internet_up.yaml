@@ -16,6 +16,24 @@ blueprint:
       selector:
         entity:
           domain: sensor
+    source_unit:
+      name: Einheit von Download-/Upload-Sensor
+      description: >-
+        Speedtest.net liefert Mbit/s (Standard). Falls du hier stattdessen
+        einen Live-Rate-Sensor (z.B. UniFi, Bytes/s) einspeist, umstellen.
+      default: mbit_per_sec
+      selector:
+        select:
+          mode: dropdown
+          options:
+            - label: "Mbit/s"
+              value: mbit_per_sec
+            - label: "Bytes/s"
+              value: bytes_per_sec
+            - label: "Kbit/s"
+              value: kbit_per_sec
+            - label: "bit/s"
+              value: bit_per_sec
     ping_sensor:
       name: Ping/Connectivity Sensor
       description: Binary Sensor, "on" = Internet erreichbar
@@ -79,6 +97,7 @@ action:
   - variables:
       speedtest_download: !input speedtest_download
       speedtest_upload: !input speedtest_upload
+      source_unit: !input source_unit
       awtrix_prefix: !input awtrix_topic_prefix
       max_down_helper: !input max_down_helper
       max_up_helper: !input max_up_helper
@@ -96,8 +115,12 @@ action:
       up_raw: "{{ states(speedtest_upload) }}"
       down_valid: "{{ down_raw not in ['unknown','unavailable',none,''] and (down_raw | float(0)) > 0 }}"
       up_valid: "{{ up_raw not in ['unknown','unavailable',none,''] and (up_raw | float(0)) > 0 }}"
-      down_mbit: "{{ (down_raw | float(0)) if down_valid else (states(max_down_helper) | float(0)) }}"
-      up_mbit: "{{ (up_raw | float(0)) if up_valid else (states(max_up_helper) | float(0)) }}"
+      unit_factor: >-
+        {%- set factors = {'mbit_per_sec': 1, 'bytes_per_sec': 8/1000000,
+        'kbit_per_sec': 1/1000, 'bit_per_sec': 1/1000000} -%}
+        {{ factors[source_unit] }}
+      down_mbit: "{{ ((down_raw | float(0)) * unit_factor) if down_valid else (states(max_down_helper) | float(0)) }}"
+      up_mbit: "{{ ((up_raw | float(0)) * unit_factor) if up_valid else (states(max_up_helper) | float(0)) }}"
       down_bits: "{{ down_mbit * 1000000 }}"
       up_bits: "{{ up_mbit * 1000000 }}"
       max_bits: "{{ [down_bits, up_bits] | max }}"
