@@ -1,0 +1,272 @@
+blueprint:
+  name: AWTRIX Internet-Status (Up/Down kombiniert)
+  description: >-
+    Kombiniert zwei Verhaltensweisen auf einem oder mehreren AWTRIX3-
+    Displays: (1) zeigt Download/Upload (Speedtest) als Popup, faellt bei
+    0/unavailable auf den letzten guten Wert zurueck und stoesst nach einem
+    Reconnect automatisch einen frischen Speedtest an; (2) zeigt ein rotes
+    "Offline!"-Popup mit Warnton, sobald der Ping/Connectivity-Sensor
+    laenger als die angegebene Zeit "off" ist.
+
+
+    Ersetzt die getrennten Blueprints "AWTRIX Internet-Speed-Popup" und
+    "AWTRIX Internet-Down-Popup".
+
+
+    Hinweis Multi-Device: Der MQTT-Topic-Praefix wird ueber device_attr(
+    device_id, 'name') ermittelt, da AWTRIX3/Blueforcer den Geraetenamen bei
+    der MQTT-Discovery direkt als Topic-Praefix registriert (z.B.
+    "awtrix_d01974"). Pruefen unter Einstellungen -> Geraete & Dienste ->
+    MQTT -> Geraeteliste: der dort angezeigte Name muss dem Topic-Praefix
+    entsprechen.
+  domain: automation
+  input:
+    speedtest_download:
+      name: Speedtest Download Sensor
+      selector:
+        entity:
+          domain: sensor
+    speedtest_upload:
+      name: Speedtest Upload Sensor
+      selector:
+        entity:
+          domain: sensor
+    source_unit:
+      name: Einheit von Download-/Upload-Sensor
+      description: >-
+        Speedtest.net liefert Mbit/s (Standard). Falls du hier stattdessen
+        einen Live-Rate-Sensor (z.B. UniFi, Bytes/s) einspeist, umstellen.
+      default: mbit_per_sec
+      selector:
+        select:
+          mode: dropdown
+          options:
+            - label: "Mbit/s"
+              value: mbit_per_sec
+            - label: "Bytes/s"
+              value: bytes_per_sec
+            - label: "Kbit/s"
+              value: kbit_per_sec
+            - label: "bit/s"
+              value: bit_per_sec
+    ping_sensor:
+      name: Ping/Connectivity Sensor
+      description: Binary Sensor, "on" = Internet erreichbar
+      selector:
+        entity:
+          domain: binary_sensor
+    button_sensor:
+      name: AWTRIX Button (mittlere Taste)
+      description: Loest manuell das Speed-Popup aus
+      selector:
+        entity:
+          domain: binary_sensor
+    awtrix_devices:
+      name: AWTRIX Geraete
+      description: >-
+        Ein oder mehrere AWTRIX3-Displays auswaehlen. Alle gewaehlten
+        Displays zeigen beide Popups (Speed + Offline) gleichzeitig.
+      selector:
+        device:
+          filter:
+            - integration: mqtt
+              manufacturer: Blueforcer
+              model: AWTRIX 3
+          multiple: true
+    max_down_helper:
+      name: Helper – letzter guter Max-Down-Wert
+      description: Gleicher Helper wie im Netzwerk-Verlauf-Blueprint
+      selector:
+        entity:
+          domain: input_text
+    max_up_helper:
+      name: Helper – letzter guter Max-Up-Wert
+      description: Gleicher Helper wie im Netzwerk-Verlauf-Blueprint
+      selector:
+        entity:
+          domain: input_text
+    reconnect_seconds:
+      name: Wartezeit nach Reconnect (Sekunden)
+      default: 30
+      selector:
+        number:
+          min: 0
+          max: 300
+          mode: box
+    offline_seconds:
+      name: Wartezeit bis "Offline" gemeldet wird (Sekunden)
+      default: 30
+      selector:
+        number:
+          min: 0
+          max: 300
+          mode: box
+    offline_text:
+      name: Offline-Popup-Text
+      default: "Offline!"
+      selector:
+        text:
+    offline_icon:
+      name: Offline-Popup LaMetric-Icon-ID
+      description: >-
+        LaMetric-Icon-IDs Connectivity-Status: 75254 / 75256 (online/offline,
+        je nach gewünschter Variante).
+      default: "75254"
+      selector:
+        text:
+    offline_color:
+      name: Offline-Popup Textfarbe (Hex)
+      default: "#FF0000"
+      selector:
+        text:
+    offline_duration:
+      name: Offline-Popup Anzeigedauer (Sekunden)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 60
+          mode: box
+    offline_rtttl:
+      name: Offline-Popup RTTTL-Warnton
+      description: Leer lassen fuer keinen Ton
+      default: "alarm:d=16,o=5,b=200:c"
+      selector:
+        text:
+
+trigger:
+  - id: values
+    trigger: state
+    entity_id:
+      - !input speedtest_download
+      - !input speedtest_upload
+  - id: reconnect
+    trigger: state
+    entity_id: !input ping_sensor
+    from:
+      - "off"
+    to:
+      - "on"
+    for:
+      hours: 0
+      minutes: 0
+      seconds: !input reconnect_seconds
+  - id: button
+    trigger: state
+    entity_id: !input button_sensor
+    to: "on"
+  - id: offline
+    trigger: state
+    entity_id: !input ping_sensor
+    to: "off"
+    for:
+      hours: 0
+      minutes: 0
+      seconds: !input offline_seconds
+
+condition: []
+
+action:
+  - variables:
+      awtrix_devices: !input awtrix_devices
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: offline
+        sequence:
+          - variables:
+              offline_text: !input offline_text
+              offline_icon: !input offline_icon
+              offline_color: !input offline_color
+              offline_duration: !input offline_duration
+              offline_rtttl: !input offline_rtttl
+          - repeat:
+              for_each: "{{ awtrix_devices }}"
+              sequence:
+                - variables:
+                    awtrix_prefix: "{{ device_attr(repeat.item, 'name') }}"
+                - action: mqtt.publish
+                  data:
+                    topic: "{{ awtrix_prefix }}/notify"
+                    payload: >-
+                      {
+                        "text": "{{ offline_text }}",
+                        "icon": "{{ offline_icon }}",
+                        "color": "{{ offline_color }}",
+                        "duration": {{ offline_duration }},
+                        "hold": false
+                        {%- if offline_rtttl and offline_rtttl != '' -%}
+                        ,"rtttl": "{{ offline_rtttl }}"
+                        {%- endif -%}
+                      }
+    default:
+      - variables:
+          speedtest_download: !input speedtest_download
+          speedtest_upload: !input speedtest_upload
+          source_unit: !input source_unit
+          max_down_helper: !input max_down_helper
+          max_up_helper: !input max_up_helper
+      - if:
+          - condition: trigger
+            id: reconnect
+        then:
+          - action: homeassistant.update_entity
+            data:
+              entity_id:
+                - "{{ speedtest_download }}"
+                - "{{ speedtest_upload }}"
+      - variables:
+          down_raw: "{{ states(speedtest_download) }}"
+          up_raw: "{{ states(speedtest_upload) }}"
+          down_valid: "{{ down_raw not in ['unknown','unavailable',none,''] and (down_raw | float(0)) > 0 }}"
+          up_valid: "{{ up_raw not in ['unknown','unavailable',none,''] and (up_raw | float(0)) > 0 }}"
+          unit_factor: >-
+            {%- set factors = {'mbit_per_sec': 1, 'bytes_per_sec': 8/1000000,
+            'kbit_per_sec': 1/1000, 'bit_per_sec': 1/1000000} -%}
+            {{ factors[source_unit] }}
+          down_mbit: "{{ ((down_raw | float(0)) * unit_factor) if down_valid else (states(max_down_helper) | float(0)) }}"
+          up_mbit: "{{ ((up_raw | float(0)) * unit_factor) if up_valid else (states(max_up_helper) | float(0)) }}"
+          down_bits: "{{ down_mbit * 1000000 }}"
+          up_bits: "{{ up_mbit * 1000000 }}"
+          max_bits: "{{ [down_bits, up_bits] | max }}"
+          divisor: >-
+            {%- if max_bits >= 100000000 -%}1000000000 {%- elif max_bits >= 100000
+            -%}1000000 {%- elif max_bits >= 100 -%}1000 {%- else -%}1 {%- endif -%}
+          unit: >-
+            {%- if max_bits >= 100000000 -%}G {%- elif max_bits >= 100000 -%}M {%-
+            elif max_bits >= 100 -%}K {%- else -%}B {%- endif -%}
+          display_text: >-
+            {{ (down_bits / divisor | float) | round(0) }}/{{ (up_bits / divisor |
+            float) | round(0) }}{{ unit }}
+      - action: input_text.set_value
+        data:
+          entity_id: "{{ max_down_helper }}"
+          value: "{{ down_mbit }}"
+      - action: input_text.set_value
+        data:
+          entity_id: "{{ max_up_helper }}"
+          value: "{{ up_mbit }}"
+      - repeat:
+          for_each: "{{ awtrix_devices }}"
+          sequence:
+            - variables:
+                awtrix_prefix: "{{ device_attr(repeat.item, 'name') }}"
+            - repeat:
+                count: 10
+                sequence:
+                  - action: mqtt.publish
+                    data:
+                      topic: "{{ awtrix_prefix }}/notify"
+                      payload: |-
+                        {
+                          "text": "{{ display_text }}",
+                          "color": "#00FF00",
+                          "progress": {{ 100 - (repeat.index - 1) * 10 }},
+                          "progressC": "#00FF00",
+                          "duration": {{ 22 - (repeat.index - 1) * 2 }},
+                          "hold": false,
+                          "stack": false
+                        }
+                  - delay:
+                      seconds: 2
+mode: single
