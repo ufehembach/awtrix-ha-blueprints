@@ -6,11 +6,12 @@ blueprint:
     als die angegebene Zeit "off" ist.
 
 
-    Hinweis Multi-Device: Der MQTT-Topic-Praefix wird aus den Device-
-    Identifiers extrahiert (device_attr(device_id, 'identifiers') | first |
-    last). Falls das bei deiner AWTRIX3/MQTT-Integrationsversion nicht den
-    erwarteten Praefix liefert, in Developer Tools -> Template pruefen:
-    {{ device_attr('<device_id>', 'identifiers') }}
+    Hinweis Multi-Device: Der MQTT-Topic-Praefix wird ueber device_attr(
+    device_id, 'name') ermittelt, da AWTRIX3/Blueforcer den Geraetenamen bei
+    der MQTT-Discovery direkt als Topic-Praefix registriert (z.B.
+    "awtrix_d01974"). Pruefen unter Einstellungen -> Geraete & Dienste ->
+    MQTT -> Geraeteliste: der dort angezeigte Name muss dem Topic-Praefix
+    entsprechen.
   domain: automation
   input:
     ping_sensor:
@@ -46,6 +47,9 @@ blueprint:
         text:
     notify_icon:
       name: LaMetric-Icon-ID
+      description: >-
+        LaMetric-Icon-IDs Connectivity-Status: 75254 / 75256 (online/offline,
+        je nach gewünschter Variante).
       default: "75254"
       selector:
         text:
@@ -92,7 +96,7 @@ action:
       for_each: "{{ awtrix_devices }}"
       sequence:
         - variables:
-            awtrix_prefix: "{{ device_attr(repeat.item, 'identifiers') | first | last }}"
+            awtrix_prefix: "{{ device_attr(repeat.item, 'name') }}"
         - action: mqtt.publish
           data:
             topic: "{{ awtrix_prefix }}/notify"
