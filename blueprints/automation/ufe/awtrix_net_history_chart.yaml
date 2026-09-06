@@ -2,9 +2,16 @@ blueprint:
   name: AWTRIX Netzwerk-Verlauf & Speed-Chart
   description: >-
     Zeigt WAN-Download/-Upload als Live-Text ("netspeed") plus rollierenden
-    Verlaufs-Chart ("netchart") auf einem AWTRIX3-Display. Referenzwerte
-    (Max) kommen vom Speedtest-Sensor und fallen bei 0/unavailable
-    automatisch auf den letzten guten Wert zurueck.
+    Verlaufs-Chart ("netchart") auf einem oder mehreren AWTRIX3-Displays
+    gleichzeitig. Referenzwerte (Max) kommen vom Speedtest-Sensor und fallen
+    bei 0/unavailable automatisch auf den letzten guten Wert zurueck.
+
+
+    Hinweis Multi-Device: Der MQTT-Topic-Praefix wird aus den Device-
+    Identifiers extrahiert (device_attr(device_id, 'identifiers') | first |
+    last). Falls das bei deiner AWTRIX3/MQTT-Integrationsversion nicht den
+    erwarteten Praefix liefert, in Developer Tools -> Template pruefen:
+    {{ device_attr('<device_id>', 'identifiers') }}
   domain: automation
   input:
     speedtest_download:
@@ -36,11 +43,18 @@ blueprint:
       selector:
         entity:
           domain: binary_sensor
-    awtrix_topic_prefix:
-      name: AWTRIX MQTT Topic-Prefix
-      default: awtrix_d01974
+    awtrix_devices:
+      name: AWTRIX Geraete
+      description: >-
+        Ein oder mehrere AWTRIX3-Displays auswaehlen. Alle gewaehlten
+        Displays zeigen denselben Chart gleichzeitig.
       selector:
-        text:
+        device:
+          filter:
+            - integration: mqtt
+              manufacturer: Blueforcer
+              model: AWTRIX 3
+          multiple: true
     max_down_helper:
       name: Helper – letzter guter Max-Down-Wert
       selector:
@@ -102,7 +116,7 @@ action:
       wan_download_rate: !input wan_download_rate
       wan_upload_rate: !input wan_upload_rate
       ping_sensor: !input ping_sensor
-      awtrix_prefix: !input awtrix_topic_prefix
+      awtrix_devices: !input awtrix_devices
       max_down_helper: !input max_down_helper
       max_up_helper: !input max_up_helper
       download_history_helper: !input download_history_helper
@@ -200,38 +214,43 @@ action:
     data:
       entity_id: "{{ max_up_helper }}"
       value: "{{ up_ref }}"
-  - action: mqtt.publish
-    data:
-      qos: "0"
-      retain: false
-      topic: "{{ awtrix_prefix }}/custom/netspeed"
-      payload: >-
-        {%- macro fmt(v) -%}
-          {%- if v >= 10 -%}{{ v | round(0) | int }}{%- else -%}{{ v | round(1) }}{%- endif -%}
-        {%- endmacro -%} {%- set live = is_state(ping_sensor, 'on') -%} {%-
-        set is_down = text_cycle == 0 -%} {%- set cur = down_val if is_down
-        else up_val -%} {%- set ref = down_ref_eff if is_down else up_ref_eff
-        -%} {%- set pct = down_pct if is_down else up_pct -%} {%- set icon = "51062"
-        if is_down else "51060" -%} {%- set color = "#0080FF" if is_down else
-        "#FFA500" -%} {%- set txt = "XXXX" if not live else (fmt(cur) ~ "/" ~
-        fmt(ref) ~ "M") -%} {
-          "text": "{{ txt }}",
-          "icon": "{{ icon }}",
-          "color": "{{ color }}",
-          "progress": {{ pct }},
-          "progressC": "{{ color }}",
-          "lifetime": 180,
-          "lifetimeMode": 1
-        }
-  - action: mqtt.publish
-    data:
-      qos: "0"
-      retain: false
-      topic: "{{ awtrix_prefix }}/custom/netchart"
-      payload: |-
-        {
-          "draw": {{ combined_draw }},
-          "lifetime": 180,
-          "lifetimeMode": 1
-        }
+  - repeat:
+      for_each: "{{ awtrix_devices }}"
+      sequence:
+        - variables:
+            awtrix_prefix: "{{ device_attr(repeat.item, 'identifiers') | first | last }}"
+        - action: mqtt.publish
+          data:
+            qos: "0"
+            retain: false
+            topic: "{{ awtrix_prefix }}/custom/netspeed"
+            payload: >-
+              {%- macro fmt(v) -%}
+                {%- if v >= 10 -%}{{ v | round(0) | int }}{%- else -%}{{ v | round(1) }}{%- endif -%}
+              {%- endmacro -%} {%- set live = is_state(ping_sensor, 'on') -%} {%-
+              set is_down = text_cycle == 0 -%} {%- set cur = down_val if is_down
+              else up_val -%} {%- set ref = down_ref_eff if is_down else up_ref_eff
+              -%} {%- set pct = down_pct if is_down else up_pct -%} {%- set icon = "51062"
+              if is_down else "51060" -%} {%- set color = "#0080FF" if is_down else
+              "#FFA500" -%} {%- set txt = "XXXX" if not live else (fmt(cur) ~ "/" ~
+              fmt(ref) ~ "M") -%} {
+                "text": "{{ txt }}",
+                "icon": "{{ icon }}",
+                "color": "{{ color }}",
+                "progress": {{ pct }},
+                "progressC": "{{ color }}",
+                "lifetime": 180,
+                "lifetimeMode": 1
+              }
+        - action: mqtt.publish
+          data:
+            qos: "0"
+            retain: false
+            topic: "{{ awtrix_prefix }}/custom/netchart"
+            payload: |-
+              {
+                "draw": {{ combined_draw }},
+                "lifetime": 180,
+                "lifetimeMode": 1
+              }
 mode: single

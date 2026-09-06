@@ -1,8 +1,16 @@
 blueprint:
   name: AWTRIX Internet-Down-Popup
   description: >-
-    Zeigt ein rotes "Offline!"-Popup mit kurzem Warnton, sobald der
-    Ping/Connectivity-Sensor laenger als die angegebene Zeit "off" ist.
+    Zeigt ein rotes "Offline!"-Popup mit kurzem Warnton auf einem oder
+    mehreren AWTRIX3-Displays, sobald der Ping/Connectivity-Sensor laenger
+    als die angegebene Zeit "off" ist.
+
+
+    Hinweis Multi-Device: Der MQTT-Topic-Praefix wird aus den Device-
+    Identifiers extrahiert (device_attr(device_id, 'identifiers') | first |
+    last). Falls das bei deiner AWTRIX3/MQTT-Integrationsversion nicht den
+    erwarteten Praefix liefert, in Developer Tools -> Template pruefen:
+    {{ device_attr('<device_id>', 'identifiers') }}
   domain: automation
   input:
     ping_sensor:
@@ -11,11 +19,18 @@ blueprint:
       selector:
         entity:
           domain: binary_sensor
-    awtrix_topic_prefix:
-      name: AWTRIX MQTT Topic-Prefix
-      default: awtrix_d01974
+    awtrix_devices:
+      name: AWTRIX Geraete
+      description: >-
+        Ein oder mehrere AWTRIX3-Displays auswaehlen. Alle gewaehlten
+        Displays zeigen das Popup gleichzeitig.
       selector:
-        text:
+        device:
+          filter:
+            - integration: mqtt
+              manufacturer: Blueforcer
+              model: AWTRIX 3
+          multiple: true
     offline_seconds:
       name: Wartezeit bis "Offline" gemeldet wird (Sekunden)
       default: 30
@@ -67,24 +82,29 @@ condition: []
 
 action:
   - variables:
-      awtrix_prefix: !input awtrix_topic_prefix
+      awtrix_devices: !input awtrix_devices
       notify_text: !input notify_text
       notify_icon: !input notify_icon
       notify_color: !input notify_color
       notify_duration: !input notify_duration
       notify_rtttl: !input notify_rtttl
-  - action: mqtt.publish
-    data:
-      topic: "{{ awtrix_prefix }}/notify"
-      payload: >-
-        {
-          "text": "{{ notify_text }}",
-          "icon": "{{ notify_icon }}",
-          "color": "{{ notify_color }}",
-          "duration": {{ notify_duration }},
-          "hold": false
-          {%- if notify_rtttl and notify_rtttl != '' -%}
-          ,"rtttl": "{{ notify_rtttl }}"
-          {%- endif -%}
-        }
+  - repeat:
+      for_each: "{{ awtrix_devices }}"
+      sequence:
+        - variables:
+            awtrix_prefix: "{{ device_attr(repeat.item, 'identifiers') | first | last }}"
+        - action: mqtt.publish
+          data:
+            topic: "{{ awtrix_prefix }}/notify"
+            payload: >-
+              {
+                "text": "{{ notify_text }}",
+                "icon": "{{ notify_icon }}",
+                "color": "{{ notify_color }}",
+                "duration": {{ notify_duration }},
+                "hold": false
+                {%- if notify_rtttl and notify_rtttl != '' -%}
+                ,"rtttl": "{{ notify_rtttl }}"
+                {%- endif -%}
+              }
 mode: single

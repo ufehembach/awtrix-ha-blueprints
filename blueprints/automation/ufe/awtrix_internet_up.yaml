@@ -1,9 +1,17 @@
 blueprint:
   name: AWTRIX Internet-Speed-Popup
   description: >-
-    Zeigt Download/Upload (Speedtest) als Popup auf AWTRIX3. Faellt bei
-    0/unavailable auf den letzten guten Wert zurueck und stoesst nach einem
-    Reconnect automatisch einen frischen Speedtest an.
+    Zeigt Download/Upload (Speedtest) als Popup auf einem oder mehreren
+    AWTRIX3-Displays. Faellt bei 0/unavailable auf den letzten guten Wert
+    zurueck und stoesst nach einem Reconnect automatisch einen frischen
+    Speedtest an.
+
+
+    Hinweis Multi-Device: Der MQTT-Topic-Praefix wird aus den Device-
+    Identifiers extrahiert (device_attr(device_id, 'identifiers') | first |
+    last). Falls das bei deiner AWTRIX3/MQTT-Integrationsversion nicht den
+    erwarteten Praefix liefert, in Developer Tools -> Template pruefen:
+    {{ device_attr('<device_id>', 'identifiers') }}
   domain: automation
   input:
     speedtest_download:
@@ -45,11 +53,18 @@ blueprint:
       selector:
         entity:
           domain: binary_sensor
-    awtrix_topic_prefix:
-      name: AWTRIX MQTT Topic-Prefix
-      default: awtrix_d01974
+    awtrix_devices:
+      name: AWTRIX Geraete
+      description: >-
+        Ein oder mehrere AWTRIX3-Displays auswaehlen. Alle gewaehlten
+        Displays zeigen das Popup gleichzeitig.
       selector:
-        text:
+        device:
+          filter:
+            - integration: mqtt
+              manufacturer: Blueforcer
+              model: AWTRIX 3
+          multiple: true
     max_down_helper:
       name: Helper – letzter guter Max-Down-Wert
       description: Gleicher Helper wie im Netzwerk-Verlauf-Blueprint
@@ -98,7 +113,7 @@ action:
       speedtest_download: !input speedtest_download
       speedtest_upload: !input speedtest_upload
       source_unit: !input source_unit
-      awtrix_prefix: !input awtrix_topic_prefix
+      awtrix_devices: !input awtrix_devices
       max_down_helper: !input max_down_helper
       max_up_helper: !input max_up_helper
   - if:
@@ -142,21 +157,26 @@ action:
       entity_id: "{{ max_up_helper }}"
       value: "{{ up_mbit }}"
   - repeat:
-      count: 10
+      for_each: "{{ awtrix_devices }}"
       sequence:
-        - action: mqtt.publish
-          data:
-            topic: "{{ awtrix_prefix }}/notify"
-            payload: |-
-              {
-                "text": "{{ display_text }}",
-                "color": "#00FF00",
-                "progress": {{ 100 - (repeat.index - 1) * 10 }},
-                "progressC": "#00FF00",
-                "duration": {{ 22 - (repeat.index - 1) * 2 }},
-                "hold": false,
-                "stack": false
-              }
-        - delay:
-            seconds: 2
+        - variables:
+            awtrix_prefix: "{{ device_attr(repeat.item, 'identifiers') | first | last }}"
+        - repeat:
+            count: 10
+            sequence:
+              - action: mqtt.publish
+                data:
+                  topic: "{{ awtrix_prefix }}/notify"
+                  payload: |-
+                    {
+                      "text": "{{ display_text }}",
+                      "color": "#00FF00",
+                      "progress": {{ 100 - (repeat.index - 1) * 10 }},
+                      "progressC": "#00FF00",
+                      "duration": {{ 22 - (repeat.index - 1) * 2 }},
+                      "hold": false,
+                      "stack": false
+                    }
+              - delay:
+                  seconds: 2
 mode: single
