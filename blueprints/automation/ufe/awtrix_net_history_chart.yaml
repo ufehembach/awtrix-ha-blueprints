@@ -3,8 +3,9 @@ blueprint:
   description: >-
     Zeigt WAN-Download/-Upload als Live-Text ("netspeed") plus rollierenden
     Verlaufs-Chart ("netchart") auf einem oder mehreren AWTRIX3-Displays
-    gleichzeitig. Referenzwerte (Max) kommen vom Speedtest-Sensor und fallen
-    bei 0/unavailable automatisch auf den letzten guten Wert zurueck.
+    (Ulanzi TC001, 32x8 Pixel) gleichzeitig. Referenzwerte (Max) kommen vom
+    Speedtest-Sensor und fallen bei 0/unavailable automatisch auf den
+    letzten guten Wert zurueck.
 
 
     Hinweis Multi-Device: Der MQTT-Topic-Praefix wird ueber device_attr(
@@ -26,6 +27,14 @@ blueprint:
     (100/50/25/12,5/6,25/3,125 % des aktuellen Referenzwerts, je mehr
     Zeilen leuchten desto naeher am Maximum). Zeilen 6-7 = alternierend
     blinkende rote Aktivitaets-Anzeige.
+
+
+    Chart-Flaeche (Spalten 2-31, 30 Spalten): rechtsbuendig - der juengste
+    Wert steht immer ganz rechts (Spalte 31), aeltere Werte wandern beim
+    Auffuellen von rechts nach links rein. Zusaetzlich wandert in Zeile 0
+    (ganz oben) ein weisser Punkt einmal pro Stunde entlang der Chart-
+    Breite (Spalte 2 = 0 Uhr ... Spalte 25 = 23 Uhr) - reine
+    Orientierung, unabhaengig vom Verlaufs-Fenster.
   domain: automation
   input:
     speedtest_download:
@@ -123,8 +132,10 @@ blueprint:
       name: Anzahl Spalten im Verlauf
       description: >-
         Max. 30, da 2 der 32 Spalten fuer Icon/Skala reserviert sind.
-        Default 24 = 24h-Fenster bei 60-Minuten-Abstand (analog ESPHome).
-      default: 24
+        Default 30 = volle Displaybreite, ergibt zusammen mit
+        append_interval_minutes=4 ein 2h-Fenster (reicht fuer eine grobe
+        Live-Indikation).
+      default: 30
       selector:
         number:
           min: 5
@@ -133,9 +144,10 @@ blueprint:
     append_interval_minutes:
       name: Abstand zwischen Verlaufspunkten (Minuten)
       description: >-
-        60 = ein Punkt pro Stunde. Bei history_length 24 ergibt das ein
-        24h-Fenster; bei 30 ein 30h-Fenster (volle Displaybreite).
-      default: 60
+        4 = wie urspruenglich, ergibt bei history_length 30 ein 2h-Fenster.
+        Fuer laengere Zeitraeume erhoehen (z.B. 60 fuer stundenweise
+        Punkte ueber history_length Stunden).
+      default: 4
       selector:
         number:
           min: 1
@@ -208,6 +220,9 @@ action:
       scale_thresholds: "{{ [100, 50, 25, 12.5, 6.25, 3.125] }}"
       lead_lit: "{{ scale_thresholds | select('le', lead_pct) | list | length }}"
       icon_x: 0
+      chart_width: "{{ 32 - icon_x - 2 }}"
+      start_col: "{{ icon_x + 2 + (chart_width - (down_hist | length)) }}"
+      hour_marker_col: "{{ icon_x + 2 + (now().hour % chart_width) }}"
       blink_frame: "{{ (states(blink_frame_helper) | int(0) + 1) % 6 }}"
       blink_dim_red: "#400000"
       blink_bright_red: "#FF0000"
@@ -229,10 +244,10 @@ action:
         {%- endfor -%} {%- for i in range(up_hist | length) -%}
           {%- set ns.uy = ns.uy + [(7 - (((up_hist[i] + 1) | log) / logmax * 7) | round(0) | int) if shared_vmax > 0 else 7] -%}
         {%- endfor -%} {%- for i in range(down_hist | length - 1) -%}
-          {%- set ns.d = ns.d + [{"dl": [icon_x + 2 + i, ns.dy[i], icon_x + 3 + i, ns.dy[i + 1], "#0080FF"]}] -%}
+          {%- set ns.d = ns.d + [{"dl": [start_col + i, ns.dy[i], start_col + i + 1, ns.dy[i + 1], "#0080FF"]}] -%}
         {%- endfor -%} {%- for i in range(up_hist | length - 1) -%}
-          {%- set ns.d = ns.d + [{"dl": [icon_x + 2 + i, ns.uy[i], icon_x + 3 + i, ns.uy[i + 1], "#FFA500"]}] -%}
-        {%- endfor -%} {{ ns.d }}
+          {%- set ns.d = ns.d + [{"dl": [start_col + i, ns.uy[i], start_col + i + 1, ns.uy[i + 1], "#FFA500"]}] -%}
+        {%- endfor -%} {%- set ns.d = ns.d + [{"dp": [hour_marker_col, 0, "#FFFFFF"]}] -%} {{ ns.d }}
       text_cycle: "{{ (states(text_cycle_helper) | int(0) + 1) % 2 }}"
   - action: input_text.set_value
     data:
