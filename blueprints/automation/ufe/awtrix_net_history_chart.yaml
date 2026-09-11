@@ -1,5 +1,6 @@
+# Version: 20260911a
 blueprint:
-  name: AWTRIX Netzwerk-Verlauf & Speed-Chart
+  name: AWTRIX Netzwerk-Verlauf & Speed-Chart (v20260911a)
   description: >-
     Zeigt WAN-Download/-Upload als Live-Text ("netspeed") plus rollierenden
     Verlaufs-Chart ("netchart") auf einem oder mehreren AWTRIX3-Displays
