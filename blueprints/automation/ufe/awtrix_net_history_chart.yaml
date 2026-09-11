@@ -23,18 +23,20 @@ blueprint:
     flach.
 
 
-    Icon-Spalte (Spalte 0, 8 Zeilen): Zeilen 0-5 = 6-stufige Log-Skala
-    (100/50/25/12,5/6,25/3,125 % des aktuellen Referenzwerts, je mehr
-    Zeilen leuchten desto naeher am Maximum). Zeilen 6-7 = alternierend
-    blinkende rote Aktivitaets-Anzeige.
+    Icon-Spalte (Spalte 0, 8 Zeilen): 8-stufige Skala mit den Stufen
+    100/70/50/30/20/10/5/2 % des aktuellen Referenzwerts (unten feiner
+    aufgeloest, oben grober) - je mehr Zeilen leuchten desto naeher am
+    Maximum. Farbe = Farbe des Treibers (blau, wenn Download die
+    Skalierung bestimmt, gelb/orange, wenn Upload sie bestimmt).
 
 
     Chart-Flaeche (Spalten 2-31, 30 Spalten): rechtsbuendig - der juengste
     Wert steht immer ganz rechts (Spalte 31), aeltere Werte wandern beim
-    Auffuellen von rechts nach links rein. Zusaetzlich wandert in Zeile 0
-    (ganz oben) ein weisser Punkt einmal pro Stunde entlang der Chart-
-    Breite (Spalte 2 = 0 Uhr ... Spalte 25 = 23 Uhr) - reine
-    Orientierung, unabhaengig vom Verlaufs-Fenster.
+    Auffuellen von rechts nach links rein. Zusaetzlich markiert in Zeile 0
+    (ganz oben) ein weisser Punkt den Beginn der aktuellen Stunde: er
+    startet bei Stundenwechsel ganz rechts (="jetzt") und wandert mit
+    fortschreitender Zeit nach links, bis er beim naechsten Stundenwechsel
+    wieder ganz rechts einspringt.
   domain: automation
   input:
     speedtest_download:
@@ -123,11 +125,6 @@ blueprint:
       selector:
         entity:
           domain: input_text
-    blink_frame_helper:
-      name: Helper – Blink-Frame (0-5)
-      selector:
-        entity:
-          domain: input_text
     history_length:
       name: Anzahl Spalten im Verlauf
       description: >-
@@ -179,7 +176,6 @@ action:
       upload_history_helper: !input upload_history_helper
       last_append_helper: !input last_append_helper
       text_cycle_helper: !input text_cycle_helper
-      blink_frame_helper: !input blink_frame_helper
       hist_len: !input history_length
       append_interval: !input append_interval_minutes
   - variables:
@@ -217,27 +213,18 @@ action:
         max if up_ref_eff > 0 else 4 }}
       lead_pct: "{{ [down_pct, up_pct] | max }}"
       lead_color: "{{ '#0080FF' if down_pct >= up_pct else '#FFA500' }}"
-      scale_thresholds: "{{ [100, 50, 25, 12.5, 6.25, 3.125] }}"
+      scale_thresholds: "{{ [100, 70, 50, 30, 20, 10, 5, 2] }}"
       lead_lit: "{{ scale_thresholds | select('le', lead_pct) | list | length }}"
       icon_x: 0
       chart_width: "{{ 32 - icon_x - 2 }}"
+      chart_right: "{{ icon_x + 1 + chart_width }}"
       start_col: "{{ icon_x + 2 + (chart_width - (down_hist | length)) }}"
-      hour_marker_col: "{{ icon_x + 2 + (now().hour % chart_width) }}"
-      blink_frame: "{{ (states(blink_frame_helper) | int(0) + 1) % 6 }}"
-      blink_dim_red: "#400000"
-      blink_bright_red: "#FF0000"
-      row6_states: "{{ ['dim','dim','off','bright','bright','off'] }}"
-      row7_states: "{{ ['off','dim','dim','off','bright','bright'] }}"
-      blink_row6: "{{ row6_states[blink_frame] }}"
-      blink_row7: "{{ row7_states[blink_frame] }}"
+      minutes_since_hour: "{{ now().minute }}"
+      hour_marker_col: "{{ [icon_x + 2, chart_right - (minutes_since_hour // append_interval)] | max }}"
       combined_draw: >-
         {%- set ns = namespace(d=[], dy=[], uy=[]) -%}
         {%- if lead_lit > 0 -%}
           {%- set ns.d = ns.d + [{"dl": [icon_x, 0, icon_x, lead_lit - 1, lead_color]}] -%}
-        {%- endif -%} {%- if blink_row6 != 'off' -%}
-          {%- set ns.d = ns.d + [{"dp": [icon_x, 6, blink_bright_red if blink_row6 == 'bright' else blink_dim_red]}] -%}
-        {%- endif -%} {%- if blink_row7 != 'off' -%}
-          {%- set ns.d = ns.d + [{"dp": [icon_x, 7, blink_bright_red if blink_row7 == 'bright' else blink_dim_red]}] -%}
         {%- endif -%} {%- set logmax = (shared_vmax + 1) | log -%} {%- for i in
         range(down_hist | length) -%}
           {%- set ns.dy = ns.dy + [(7 - (((down_hist[i] + 1) | log) / logmax * 7) | round(0) | int) if shared_vmax > 0 else 7] -%}
@@ -265,10 +252,6 @@ action:
     data:
       entity_id: "{{ text_cycle_helper }}"
       value: "{{ text_cycle }}"
-  - action: input_text.set_value
-    data:
-      entity_id: "{{ blink_frame_helper }}"
-      value: "{{ blink_frame }}"
   - action: input_text.set_value
     data:
       entity_id: "{{ max_down_helper }}"
