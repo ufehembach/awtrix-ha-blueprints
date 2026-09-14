@@ -1,0 +1,64 @@
+# Kanonische Netzwerk-Sensoren für AWTRIX + ESPHome (CYD, nv-tv)
+#
+# Zweck: EINE Normalisierungsschicht, die Einheit und Namensgebung fixiert.
+# Alle Konsumenten (AWTRIX-Blueprints, ESPHome-Devices) referenzieren nur
+# noch diese 5 Entities - nie wieder die Rohsensoren direkt, nie wieder
+# einen wan_rate_factor pro Gerät pflegen.
+#
+# Bei Host-Wechsel (z.B. h1piwowa/Reise mit GL.iNet statt UDM Pro) wird
+# NUR diese Datei angepasst (andere Quelle, ggf. andere Umrechnung) -
+# die Namen sensor.net_wan_down/_up/_down_max/_up_max/_ping bleiben exakt
+# gleich, AWTRIX/ESPHome muss nirgends angefasst werden.
+#
+# Deployment: in packages/ Ordner legen, dann
+#   Entwicklerwerkzeuge -> YAML -> Vorlage neu laden
+# (kein Container-Neustart noetig, template: ist kein Legacy-Platform)
+#
+# Version: 20260913a
+
+template:
+  - sensor:
+      - name: "Net WAN Down"
+        unique_id: net_wan_down
+        unit_of_measurement: "Mbit/s"
+        state_class: measurement
+        state: >-
+          {{ states('sensor.udm_wan_down') | float(0) }}
+        availability: >-
+          {{ has_value('sensor.udm_wan_down') }}
+
+      - name: "Net WAN Up"
+        unique_id: net_wan_up
+        unit_of_measurement: "Mbit/s"
+        state_class: measurement
+        state: >-
+          {{ states('sensor.udm_wan_up') | float(0) }}
+        availability: >-
+          {{ has_value('sensor.udm_wan_up') }}
+
+      - name: "Net WAN Down Max"
+        unique_id: net_wan_down_max
+        unit_of_measurement: "Mbit/s"
+        state_class: measurement
+        state: >-
+          {{ states('sensor.speedtest_download') | float(0) }}
+        availability: >-
+          {{ has_value('sensor.speedtest_download') }}
+
+      - name: "Net WAN Up Max"
+        unique_id: net_wan_up_max
+        unit_of_measurement: "Mbit/s"
+        state_class: measurement
+        state: >-
+          {{ states('sensor.speedtest_upload') | float(0) }}
+        availability: >-
+          {{ has_value('sensor.speedtest_upload') }}
+
+      - name: "Net Ping"
+        unique_id: net_ping
+        unit_of_measurement: "ms"
+        state_class: measurement
+        state: >-
+          {{ state_attr('binary_sensor.1_1_1_1', 'round_trip_time_avg') | float(0) }}
+        availability: >-
+          {{ state_attr('binary_sensor.1_1_1_1', 'round_trip_time_avg') is not none }}
