@@ -58,12 +58,24 @@ echo "Repo:   $REPO_ROOT"
 echo "Quelle: $SOURCE"
 echo "Ziel:   $TARGET"
 
-# Ausschluesse hier bei Bedarf anpassen (z.B. eigene Scripts/Doku nicht
-# mit ins HA-Config kopieren)
-rsync -av "${DRY_RUN[@]}" "${DELETE[@]}" \
-  --exclude='.git/' \
-  --exclude='.gitignore' \
-  --exclude='.github/' \
-  --exclude='README.md' \
-  --exclude='*.md' \
-  "$SOURCE" "$TARGET"
+# in sync_to_ha.sh ergänzen:
+
+PROFILE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -p|--profile) PROFILE="$2"; shift 2 ;;
+    *) break ;;
+  esac
+done
+
+# ... bestehender rsync-Block für den Rest des Repos ...
+
+if [ -n "$PROFILE" ]; then
+  src="$REPO_ROOT/packages/net_metrics-${PROFILE}.yaml"
+  if [ ! -f "$src" ]; then
+    echo "Kein Profil '$PROFILE' (erwartet: $src)" >&2
+    exit 1
+  fi
+  rsync -a "$src" "$TARGET/packages/net_metrics.yaml"
+  echo "Profil '$PROFILE' als packages/net_metrics.yaml deployed"
+fi

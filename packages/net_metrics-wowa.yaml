@@ -1,0 +1,68 @@
+# Kanonische Netzwerk-Sensoren für AWTRIX + ESPHome (CYD, nv-tv)
+# Variante fuer h1piwowa (unterwegs): GL.iNet AR750S + Speedtest.io-Integration
+#
+# Liefert exakt dieselben 5 Entity-Namen wie net_metrics.yaml auf h1docker0 -
+# AWTRIX-Blueprints und ESPHome-Devices (CYD, nv-tv) muessen dafuer NICHT
+# angefasst werden, wenn dasselbe Geraet mal zuhause, mal unterwegs laeuft.
+# Es genuegt, auf dem jeweiligen HA-Host die passende net_metrics.yaml zu
+# haben (diese Datei hier bei Bedarf als packages/net_metrics.yaml auf
+# h1piwowa ablegen).
+#
+# Quellen:
+#   - Live Down/Up: GL.iNet AR750S liefert Byte/s -> hier x0.000008 nach Mbit/s
+#   - Max Down/Up:  Speedtest.io-Integration (sensor.speedtest_download/upload),
+#                   liefert bereits Mbit/s
+#   - Ping:         Speedtest.io-Integration (sensor.speedtest_ping), ms
+#
+# Deployment: in packages/ Ordner auf h1piwowa legen, dann
+#   Entwicklerwerkzeuge -> YAML -> Vorlage neu laden
+# (kein Container-Neustart noetig, template: ist kein Legacy-Platform)
+#
+# Version: 20260920a
+
+template:
+  - sensor:
+      - name: "Net WAN Down"
+        unique_id: net_wan_down
+        unit_of_measurement: "Mbit/s"
+        state_class: measurement
+        state: >-
+          {{ (states('sensor.gl_inet_ar750s_wan_download_rate') | float(0)) * 0.000008 }}
+        availability: >-
+          {{ has_value('sensor.gl_inet_ar750s_wan_download_rate') }}
+
+      - name: "Net WAN Up"
+        unique_id: net_wan_up
+        unit_of_measurement: "Mbit/s"
+        state_class: measurement
+        state: >-
+          {{ (states('sensor.gl_inet_ar750s_wan_upload_rate') | float(0)) * 0.000008 }}
+        availability: >-
+          {{ has_value('sensor.gl_inet_ar750s_wan_upload_rate') }}
+
+      - name: "Net WAN Down Max"
+        unique_id: net_wan_down_max
+        unit_of_measurement: "Mbit/s"
+        state_class: measurement
+        state: >-
+          {{ states('sensor.speedtest_download') | float(0) }}
+        availability: >-
+          {{ has_value('sensor.speedtest_download') }}
+
+      - name: "Net WAN Up Max"
+        unique_id: net_wan_up_max
+        unit_of_measurement: "Mbit/s"
+        state_class: measurement
+        state: >-
+          {{ states('sensor.speedtest_upload') | float(0) }}
+        availability: >-
+          {{ has_value('sensor.speedtest_upload') }}
+
+      - name: "Net Ping"
+        unique_id: net_ping
+        unit_of_measurement: "ms"
+        state_class: measurement
+        state: >-
+          {{ states('sensor.speedtest_ping') | float(0) }}
+        availability: >-
+          {{ has_value('sensor.speedtest_ping') }}
