@@ -1,6 +1,6 @@
-# Version: 20260911a
+# Version: 20261022a
 blueprint:
-  name: AWTRIX Netzwerk-Verlauf & Speed-Chart (v20260911a)
+  name: AWTRIX Netzwerk-Verlauf & Speed-Chart (v20261022a)
   description: >-
     Zeigt WAN-Download/-Upload als Live-Text ("netspeed") plus rollierenden
     Verlaufs-Chart ("netchart") auf einem oder mehreren AWTRIX3-Displays
@@ -17,11 +17,11 @@ blueprint:
     entsprechen.
 
 
-    Hinweis Einheit: wan_download_rate/wan_upload_rate koennen entweder rohe
-    Bytes/s liefern (z.B. GL.iNet unterwegs) oder bereits umgerechnete
-    Mbit/s (z.B. UDM-Pro-InfluxDB-Sensor mit value_template zuhause) -
-    dafuer unten die passende Einheit auswaehlen, sonst bleibt der Chart
-    flach.
+    Hinweis Einheit: wan_download_rate/wan_upload_rate koennen Bytes/s (roh,
+    z.B. GL.iNet unterwegs), kbit/s (z.B. FRITZ!Box) oder bereits
+    umgerechnete Mbit/s (z.B. UDM-Pro-InfluxDB-Sensor mit value_template
+    zuhause) liefern - dafuer unten die passende Einheit auswaehlen, sonst
+    bleibt der Chart flach.
 
 
     Icon-Spalte (Spalte 0, 8 Zeilen): 8-stufige Skala mit den Stufen
@@ -66,8 +66,8 @@ blueprint:
     wan_rate_unit:
       name: Einheit der Live-WAN-Sensoren
       description: >-
-        Bytes/s (roh, z.B. GL.iNet AR750S unterwegs) oder bereits
-        umgerechnete Mbit/s (z.B. UDM Pro via InfluxDB-Sensor mit
+        Bytes/s (roh, z.B. GL.iNet AR750S unterwegs), kbit/s (z.B. FRITZ!Box)
+        oder bereits umgerechnete Mbit/s (z.B. UDM Pro via InfluxDB-Sensor mit
         value_template zuhause).
       default: bytes_per_sec
       selector:
@@ -76,6 +76,8 @@ blueprint:
           options:
             - label: "Bytes/s (roh)"
               value: bytes_per_sec
+            - label: "kbit/s (z.B. FRITZ!Box)"
+              value: kbit_per_sec
             - label: "Mbit/s (bereits umgerechnet)"
               value: mbit_per_sec
     ping_sensor:
@@ -182,10 +184,10 @@ action:
   - variables:
       down_val: >-
         {%- set raw = states(wan_download_rate) | float(0) -%}
-        {{ (raw * 8 / 1000000 if wan_rate_unit == 'bytes_per_sec' else raw) | round(2) }}
+        {{ (raw * 8 / 1000000 if wan_rate_unit == 'bytes_per_sec' else (raw / 1000 if wan_rate_unit == 'kbit_per_sec' else raw)) | round(2) }}
       up_val: >-
         {%- set raw = states(wan_upload_rate) | float(0) -%}
-        {{ (raw * 8 / 1000000 if wan_rate_unit == 'bytes_per_sec' else raw) | round(2) }}
+        {{ (raw * 8 / 1000000 if wan_rate_unit == 'bytes_per_sec' else (raw / 1000 if wan_rate_unit == 'kbit_per_sec' else raw)) | round(2) }}
       down_hist_raw: "{{ states(download_history_helper) | from_json(default=[]) }}"
       up_hist_raw: "{{ states(upload_history_helper) | from_json(default=[]) }}"
       last_append: "{{ states(last_append_helper) }}"
@@ -274,7 +276,7 @@ action:
             # LaMetric-Icon-IDs: 51060 = Upload, 51062 = Download
             payload: >-
               {%- macro fmt(v) -%}
-                {%- if v >= 10 -%}{{ v | round(0) | int }}{%- else -%}{{ v | round(1) }}{%- endif -%}
+                {%- if v >= 100 -%}{{ v | round(0) | int }}{%- else -%}{{ v | round(1) }}{%- endif -%}
               {%- endmacro -%} {%- set live = is_state(ping_sensor, 'on') -%} {%-
               set is_down = text_cycle == 0 -%} {%- set cur = down_val if is_down
               else up_val -%} {%- set ref = down_ref_eff if is_down else up_ref_eff

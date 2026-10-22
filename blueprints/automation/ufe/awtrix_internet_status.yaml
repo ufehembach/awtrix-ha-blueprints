@@ -1,3 +1,4 @@
+# Version: 20261022a
 blueprint:
   name: AWTRIX Internet-Status (Up/Down kombiniert)
   description: >-
@@ -230,14 +231,15 @@ action:
           up_bits: "{{ up_mbit * 1000000 }}"
           max_bits: "{{ [down_bits, up_bits] | max }}"
           divisor: >-
-            {%- if max_bits >= 100000000 -%}1000000000 {%- elif max_bits >= 100000
+            {%- if max_bits >= 1000000000 -%}1000000000 {%- elif max_bits >= 100000
             -%}1000000 {%- elif max_bits >= 100 -%}1000 {%- else -%}1 {%- endif -%}
           unit: >-
-            {%- if max_bits >= 100000000 -%}G {%- elif max_bits >= 100000 -%}M {%-
+            {%- if max_bits >= 1000000000 -%}G {%- elif max_bits >= 100000 -%}M {%-
             elif max_bits >= 100 -%}K {%- else -%}B {%- endif -%}
           display_text: >-
-            {{ (down_bits / divisor | float) | round(0) }}/{{ (up_bits / divisor |
-            float) | round(0) }}{{ unit }}
+            {%- set d = (down_bits / divisor) | float -%}
+            {%- set u = (up_bits / divisor) | float -%}
+            {{ (d | round(0) | int) if d >= 100 else (d | round(1)) }}/{{ (u | round(0) | int) if u >= 100 else (u | round(1)) }}{{ unit }}
       - action: input_text.set_value
         data:
           entity_id: "{{ max_down_helper }}"
@@ -263,10 +265,10 @@ action:
                           "color": "#00FF00",
                           "progress": {{ 100 - (repeat.index - 1) * 10 }},
                           "progressC": "#00FF00",
-                          "duration": {{ 22 - (repeat.index - 1) * 2 }},
+                          "duration": {{ 11 - (repeat.index - 1) }},
                           "hold": false,
                           "stack": false
                         }
                   - delay:
-                      seconds: 2
+                      seconds: 1
 mode: single
