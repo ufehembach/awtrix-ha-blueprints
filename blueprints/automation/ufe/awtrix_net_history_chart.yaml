@@ -1,6 +1,6 @@
-# Version: 20261022a
+# Version: 20261022b
 blueprint:
-  name: AWTRIX Netzwerk-Verlauf & Speed-Chart (v20261022a)
+  name: AWTRIX Netzwerk-Verlauf & Speed-Chart (v20261022b)
   description: >-
     Zeigt WAN-Download/-Upload als Live-Text ("netspeed") plus rollierenden
     Verlaufs-Chart ("netchart") auf einem oder mehreren AWTRIX3-Displays
@@ -24,11 +24,11 @@ blueprint:
     bleibt der Chart flach.
 
 
-    Icon-Spalte (Spalte 0, 8 Zeilen): 8-stufige Skala mit den Stufen
-    100/70/50/30/20/10/5/2 % des aktuellen Referenzwerts (unten feiner
-    aufgeloest, oben grober) - je mehr Zeilen leuchten desto naeher am
-    Maximum. Farbe = Farbe des Treibers (blau, wenn Download die
-    Skalierung bestimmt, gelb/orange, wenn Upload sie bestimmt).
+    Icon-Spalte (Spalte 0, 8 Zeilen): Skalierung immer auf den hoechsten
+    Referenzwert beider Richtungen. Der hoechste aktuelle Wert liegt dabei
+    bei 100 % = 1 Pixel; jede Halbierung (50, 25, 12, 6, 3 %, ...) fuegt
+    ein Pixel hinzu, maximal 8. Farbe = Treiber (blau, wenn Download der
+    hoehere aktuelle Wert ist, gelb/orange, wenn Upload).
 
 
     Chart-Flaeche (Spalten 2-31, 30 Spalten): rechtsbuendig - der juengste
@@ -215,29 +215,37 @@ action:
         {{ [[(up_val / up_ref_eff * 100) | round(0) | int, 100] | min, 4] |
         max if up_ref_eff > 0 else 4 }}
       lead_pct: "{{ [down_pct, up_pct] | max }}"
-      lead_color: "{{ '#0080FF' if down_pct >= up_pct else '#FFA500' }}"
-      scale_thresholds: "{{ [100, 70, 50, 30, 20, 10, 5, 2] }}"
-      lead_lit: "{{ scale_thresholds | select('le', lead_pct) | list | length }}"
+      lead_val: "{{ [down_val, up_val] | max }}"
+      lead_color: "{{ '#0080FF' if down_val >= up_val else '#FFA500' }}"
+      lead_ratio: "{{ (lead_val / shared_vmax) if shared_vmax > 0 else 0 }}"
       icon_x: 0
       chart_width: "{{ 32 - icon_x - 2 }}"
       chart_right: "{{ icon_x + 1 + chart_width }}"
       start_col: "{{ icon_x + 2 + (chart_width - (down_hist | length)) }}"
       minutes_since_hour: "{{ now().minute }}"
       hour_marker_col: "{{ [icon_x + 2, chart_right - (minutes_since_hour // append_interval)] | max }}"
+      vmax: "{{ ([down_val, up_val] + down_hist + up_hist) | max }}"
+      ref_max: "{{ [down_ref, up_ref, vmax, 0.01] | max }}"
+      zoom: "{{ 16 if vmax * 16 <= ref_max else 8 if vmax * 8 <= ref_max else 4 if vmax * 4 <= ref_max else 2 if vmax * 2 <= ref_max else 1 }}"
+      zoom_lit: "{{ {1: 1, 2: 2, 4: 3, 8: 4, 16: 5}[zoom] }}"
+      driver_color: "{{ '#0080FF' if down_val >= up_val else '#FFA500' }}"
       combined_draw: >-
         {%- set ns = namespace(d=[], dy=[], uy=[]) -%}
-        {%- if lead_lit > 0 -%}
-          {%- set ns.d = ns.d + [{"dl": [icon_x, 0, icon_x, lead_lit - 1, lead_color]}] -%}
-        {%- endif -%} {%- set logmax = (shared_vmax + 1) | log -%} {%- for i in
-        range(down_hist | length) -%}
-          {%- set ns.dy = ns.dy + [(7 - (((down_hist[i] + 1) | log) / logmax * 7) | round(0) | int) if shared_vmax > 0 else 7] -%}
-        {%- endfor -%} {%- for i in range(up_hist | length) -%}
-          {%- set ns.uy = ns.uy + [(7 - (((up_hist[i] + 1) | log) / logmax * 7) | round(0) | int) if shared_vmax > 0 else 7] -%}
-        {%- endfor -%} {%- for i in range(down_hist | length - 1) -%}
+        {%- set ns.d = [{"dl": [icon_x, 0, icon_x, zoom_lit - 1, driver_color]}] -%}
+        {%- for i in range(down_hist | length) -%}
+          {%- set ns.dy = ns.dy + [7 - ([[((down_hist[i] * zoom / ref_max) * 7) | round(0) | int, 7] | min, 0] | max)] -%}
+        {%- endfor -%}
+        {%- for i in range(up_hist | length) -%}
+          {%- set ns.uy = ns.uy + [7 - ([[((up_hist[i] * zoom / ref_max) * 7) | round(0) | int, 7] | min, 0] | max)] -%}
+        {%- endfor -%}
+        {%- for i in range(down_hist | length - 1) -%}
           {%- set ns.d = ns.d + [{"dl": [start_col + i, ns.dy[i], start_col + i + 1, ns.dy[i + 1], "#0080FF"]}] -%}
-        {%- endfor -%} {%- for i in range(up_hist | length - 1) -%}
+        {%- endfor -%}
+        {%- for i in range(up_hist | length - 1) -%}
           {%- set ns.d = ns.d + [{"dl": [start_col + i, ns.uy[i], start_col + i + 1, ns.uy[i + 1], "#FFA500"]}] -%}
-        {%- endfor -%} {%- set ns.d = ns.d + [{"dp": [hour_marker_col, 0, "#FFFFFF"]}] -%} {{ ns.d }}
+        {%- endfor -%}
+        {%- set ns.d = ns.d + [{"dp": [hour_marker_col, 0, "#FFFFFF"]}] -%}
+        {{ ns.d }}
       text_cycle: "{{ (states(text_cycle_helper) | int(0) + 1) % 2 }}"
   - action: input_text.set_value
     data:
@@ -300,7 +308,7 @@ action:
             topic: "{{ awtrix_prefix }}/custom/netchart"
             payload: |-
               {
-                "draw": {{ combined_draw }},
+                "draw": {{ combined_draw | tojson }},
                 "lifetime": 180,
                 "lifetimeMode": 1
               }
