@@ -1,6 +1,6 @@
-# Version: 20261022b
+# Version: 20261023c
 blueprint:
-  name: AWTRIX Netzwerk-Verlauf & Speed-Chart (v20261022b)
+  name: AWTRIX Netzwerk-Verlauf & Speed-Chart (v20261023c)
   description: >-
     Zeigt WAN-Download/-Upload als Live-Text ("netspeed") plus rollierenden
     Verlaufs-Chart ("netchart") auf einem oder mehreren AWTRIX3-Displays
@@ -51,6 +51,24 @@ blueprint:
       selector:
         entity:
           domain: sensor
+    speedtest_unit:
+      name: Einheit der Speedtest-Sensoren
+      description: >-
+        Einheit, in der die Speedtest-Sensoren liefern. Falls die Referenz
+        (z.B. 4803) unrealistisch hoch ist, hier die passende Einheit wählen.
+      default: mbit_per_sec
+      selector:
+        select:
+          mode: dropdown
+          options:
+            - label: "Mbit/s"
+              value: mbit_per_sec
+            - label: "kbit/s"
+              value: kbit_per_sec
+            - label: "bit/s"
+              value: bit_per_sec
+            - label: "Bytes/s"
+              value: bytes_per_sec
     wan_download_rate:
       name: Live WAN Download-Rate Sensor
       description: Siehe "Einheit" weiter unten.
@@ -168,6 +186,7 @@ action:
   - variables:
       speedtest_download: !input speedtest_download
       speedtest_upload: !input speedtest_upload
+      speedtest_unit: !input speedtest_unit
       wan_download_rate: !input wan_download_rate
       wan_upload_rate: !input wan_upload_rate
       wan_rate_unit: !input wan_rate_unit
@@ -199,12 +218,13 @@ action:
       up_hist: >-
         {{ (up_hist_raw[-(hist_len - 1):] + [up_val]) if should_append else
         up_hist_raw }}
+      speed_factor: "{{ {'mbit_per_sec': 1, 'kbit_per_sec': 0.001, 'bit_per_sec': 0.000001, 'bytes_per_sec': 0.000008}[speedtest_unit] }}"
       down_raw: "{{ states(speedtest_download) }}"
       up_raw: "{{ states(speedtest_upload) }}"
       down_valid: "{{ down_raw not in ['unknown','unavailable',none,''] and (down_raw | float(0)) > 0 }}"
       up_valid: "{{ up_raw not in ['unknown','unavailable',none,''] and (up_raw | float(0)) > 0 }}"
-      down_ref: "{{ (down_raw | float(0)) if down_valid else (states(max_down_helper) | float(6)) }}"
-      up_ref: "{{ (up_raw | float(0)) if up_valid else (states(max_up_helper) | float(3)) }}"
+      down_ref: "{{ (down_raw | float(0) * speed_factor) if down_valid else (states(max_down_helper) | float(6)) }}"
+      up_ref: "{{ (up_raw | float(0) * speed_factor) if up_valid else (states(max_up_helper) | float(3)) }}"
       down_ref_eff: "{{ [down_ref, down_hist | max, down_val] | max }}"
       up_ref_eff: "{{ [up_ref, up_hist | max, up_val] | max }}"
       shared_vmax: "{{ [down_ref_eff, up_ref_eff] | max }}"
@@ -283,15 +303,12 @@ action:
             topic: "{{ awtrix_prefix }}/custom/netspeed"
             # LaMetric-Icon-IDs: 51060 = Upload, 51062 = Download
             payload: >-
-              {%- macro fmt(v) -%}
-                {%- if v >= 100 -%}{{ v | round(0) | int }}{%- else -%}{{ v | round(1) }}{%- endif -%}
-              {%- endmacro -%} {%- set live = is_state(ping_sensor, 'on') -%} {%-
+              {%- macro fmt(v) -%}{%- if v >= 9.95 -%}{{ v | round(0) | int }}M{%- elif v >= 1 -%}{{ v | round(1) }}M{%- else -%}{{ (v * 1000) | round(0) | int }}k{%- endif -%}{%- endmacro -%} {%- set live = is_state(ping_sensor, 'on') -%} {%-
               set is_down = text_cycle == 0 -%} {%- set cur = down_val if is_down
               else up_val -%} {%- set ref = down_ref_eff if is_down else up_ref_eff
               -%} {%- set pct = down_pct if is_down else up_pct -%} {%- set icon = "51062"
               if is_down else "51060" -%} {%- set color = "#0080FF" if is_down else
-              "#FFA500" -%} {%- set txt = "XXXX" if not live else (fmt(cur) ~ "/" ~
-              fmt(ref) ~ "M") -%} {
+              "#FFA500" -%} {%- set txt = "XXXX" if not live else (fmt(cur) ~ "/" ~ fmt(ref)) -%} {
                 "text": "{{ txt }}",
                 "icon": "{{ icon }}",
                 "color": "{{ color }}",
