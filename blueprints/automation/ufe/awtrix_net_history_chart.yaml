@@ -1,6 +1,6 @@
-# Version: 20261023c
+# Version: 20261103a
 blueprint:
-  name: AWTRIX Netzwerk-Verlauf & Speed-Chart (v20261023c)
+  name: AWTRIX Netzwerk-Verlauf & Speed-Chart (v20261103a)
   description: >-
     Zeigt WAN-Download/-Upload als Live-Text ("netspeed") plus rollierenden
     Verlaufs-Chart ("netchart") auf einem oder mehreren AWTRIX3-Displays
@@ -246,8 +246,8 @@ action:
       hour_marker_col: "{{ [icon_x + 2, chart_right - (minutes_since_hour // append_interval)] | max }}"
       vmax: "{{ ([down_val, up_val] + down_hist + up_hist) | max }}"
       ref_max: "{{ [down_ref, up_ref, vmax, 0.01] | max }}"
-      zoom: "{{ 16 if vmax * 16 <= ref_max else 8 if vmax * 8 <= ref_max else 4 if vmax * 4 <= ref_max else 2 if vmax * 2 <= ref_max else 1 }}"
-      zoom_lit: "{{ {1: 1, 2: 2, 4: 3, 8: 4, 16: 5}[zoom] }}"
+      zoom: "{{ 128 if vmax * 128 <= ref_max else 64 if vmax * 64 <= ref_max else 32 if vmax * 32 <= ref_max else 16 if vmax * 16 <= ref_max else 8 if vmax * 8 <= ref_max else 4 if vmax * 4 <= ref_max else 2 if vmax * 2 <= ref_max else 1 }}"
+      zoom_lit: "{{ {1: 1, 2: 2, 4: 3, 8: 4, 16: 5, 32: 6, 64: 7, 128: 8}[zoom] }}"
       driver_color: "{{ '#0080FF' if down_val >= up_val else '#FFA500' }}"
       combined_draw: >-
         {%- set ns = namespace(d=[], dy=[], uy=[]) -%}
